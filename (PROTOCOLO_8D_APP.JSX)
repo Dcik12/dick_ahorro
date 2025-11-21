@@ -1,0 +1,1061 @@
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+
+// Importaciones de Íconos
+import { 
+    ShieldCheck, TrendingUp, DollarSign, ArrowRight, Cpu, Zap, Lightbulb, Wallet, Key, Layers, MessageSquare, TrendingDown, ArrowLeft, Home, Calculator, Banknote, Clipboard, Aperture, CheckCircle, Loader, CloudLightning, BrainCircuit, Rocket, CreditCard, Terminal, Link, Repeat2, Lock, Search, Send
+} from 'lucide-react';
+
+// Variables para las funciones de Firebase (Inicializadas como null y cargadas en useEffect)
+let initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged;
+let getFirestore, doc, setDoc, onSnapshot;
+
+// --- CONFIGURACIÓN DE LA PLATAFORMA Y DATOS DEL ASESOR ---
+const ADVISOR_INFO = {
+    NAME: "Dick Rodríguez (Experto Digital)",
+    WHATSAPP_NUMBER_ONLY: "584243008123", 
+    PAGO_MOVIL: {
+        BANK_CODE: "0102", // Banco de Venezuela
+        PHONE: "04145997209",
+        ID: "18043266",
+        AMOUNT_USD: "3 USD", // Costo Fijo
+    },
+    SLOGAN: "Tu Riqueza Digital tiene soporte 24/7. ¡Activación Instantánea!",
+};
+
+const WHATSAPP_MESSAGES = {
+    COMPROBANTE: `Hola ${ADVISOR_INFO.NAME}, adjunto el comprobante de pago de la Licencia de Riqueza Digital (${ADVISOR_INFO.PAGO_MOVIL.AMOUNT_USD}). Mi nombre es [Tu Nombre] y deseo activar el paso 3.`,
+    ASESORIA: `Hola ${ADVISOR_INFO.NAME}, he completado el Protocolo 8D de Riqueza Digital y necesito activar mi Asesoría Inteligente 24/7 para el plan de Rendimiento y Viralización.`,
+};
+
+// Función de utilidad para manejar reintentos de API (Exponential Backoff)
+const fetchWithRetry = async (url, options, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response;
+        } catch (error) {
+            if (i < retries - 1) {
+                const delay = Math.pow(2, i) * 1000;
+                console.warn(`[API Retry] Intento ${i + 1} fallido. Reintentando en ${delay / 1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw error;
+            }
+        }
+    }
+    throw new Error("Límite de reintentos de conexión a la API agotado.");
+};
+
+
+// --- COMPONENTE LLAMADA A LA IA PARA SEGURIDAD DE BILLETERAS (PASO 3) ---
+const SecurityAdvisorTool = () => {
+    const [query, setQuery] = useState('Mejores prácticas para guardar las 12 palabras clave (seed phrase)');
+    const [advice, setAdvice] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const getSecurityAdvice = useCallback(async () => {
+        if (!query.trim()) {
+            setError("Por favor, introduce una pregunta de seguridad.");
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+        setAdvice(null);
+        
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        // System prompt en español para seguridad
+        const systemPrompt = `Eres un Ciber-Asesor experto en Autocustodia y Seguridad de Criptomonedas (Wallets). Debes responder con una lista concisa de 3 a 5 puntos (usando '-' como separador en la UI) sobre las mejores prácticas de seguridad, enfocándote en la gestión de claves privadas, seed phrases y la protección contra ataques de phishing. La respuesta debe ser altamente práctica y orientada a la acción.`;
+        const userQuery = `Dada mi necesidad de proteger mis Stablecoins en una billetera de Autocustodia (Paso 7), dame consejos de seguridad sobre: ${query}`;
+
+
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            tools: [{ "google_search": {} }], // Usar Google Search para Grounding
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+        };
+
+        try {
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const candidate = result.candidates?.[0];
+
+            if (candidate && candidate.content?.parts?.[0]?.text) {
+                const text = candidate.content.parts[0].text;
+                // Formatear la respuesta de la IA en una lista de puntos
+                setAdvice(text.split('\n').filter(line => line.trim().startsWith('-')).map(line => line.substring(1).trim()));
+                // Si la IA no usa guiones, usar regex para separar por frases (fallback)
+                if (advice === null || advice.length === 0) {
+                     setAdvice(text.split(/(\d+\.\s*|\*\s*)/).filter(Boolean).map(s => s.trim()).filter(s => s.length > 5));
+                }
+            } else {
+                setError("La Asesoría de Seguridad no pudo generar una respuesta.");
+            }
+
+        } catch (err) {
+            console.error("Error fetching Gemini API:", err);
+            setError(`Fallo de conexión ADI: ${err.message}.`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [query, advice]);
+
+    return (
+        <div className="p-4 rounded-xl bg-gray-800/80 border-2 border-purple-500 shadow-neon-purple mt-6">
+            <h4 className="text-xl font-extrabold text-purple-300 flex items-center mb-4 border-b border-purple-500/30 pb-2">
+                <Lock className="w-6 h-6 mr-2 text-purple-400"/> ASESOR DE SEGURIDAD DIGITAL ✨
+            </h4>
+            <p className="text-sm text-gray-400 mb-3">Pregunte a la IA sobre gestión de claves, wallets frías, o seguridad anti-phishing.</p>
+            
+            <div className="flex space-x-2 mb-4">
+                <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Escriba su pregunta de seguridad..."
+                    className="flex-grow p-3 rounded-xl bg-gray-900 text-white border border-gray-700 focus:ring-purple-500 focus:border-purple-500 shadow-inner"
+                />
+                <button
+                    onClick={getSecurityAdvice}
+                    disabled={isLoading}
+                    className="flex-shrink-0 p-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold transition duration-200 shadow-md shadow-purple-700/50 flex items-center"
+                >
+                    {isLoading ? <Loader className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5"/>}
+                </button>
+            </div>
+            
+            {error && (
+                <div className="p-3 bg-red-900/50 rounded-lg text-red-300 text-sm">{error}</div>
+            )}
+
+            {advice && advice.length > 0 && (
+                <div className="mt-4 p-4 bg-gray-950 rounded-lg border-l-4 border-emerald-400 shadow-md">
+                    <p className="text-sm font-bold text-emerald-400 mb-2">CONSEJOS CLAVE DE SEGURIDAD (ADI):</p>
+                    <ul className="list-none space-y-2 text-gray-200">
+                        {advice.map((item, index) => (
+                            <li key={index} className="flex items-start">
+                                <CheckCircle className="w-4 h-4 mt-1 mr-2 text-emerald-500 flex-shrink-0"/>
+                                <span className='text-sm'>{item}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {advice && advice.length === 0 && (
+                <div className="p-3 bg-yellow-900/50 rounded-lg text-yellow-300 text-sm">El asesor generó contenido, pero no pudo ser formateado como lista.</div>
+            )}
+        </div>
+    );
+};
+
+
+// --- COMPONENTE LLAMADA A LA IA PARA ASESORÍA PERSONALIZADA (PASO 8) ---
+const DigitalAdvisor = ({ userId }) => {
+    const [advice, setAdvice] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    // Contexto que la IA usará para generar la respuesta (basado en el historial)
+    const systemPrompt = `Actúa como un Estratega de Viralización y Utilidad Digital, experto en FinTech y Marketing.
+    Tu objetivo es proporcionar el "Próximo Paso Estratégico" más óptimo para un usuario que acaba de completar el Protocolo 8D (Blindaje de capital en Stablecoins).
+    La meta del usuario es utilizar este capital blindado para desarrollar una herramienta o sistema digital que sea altamente útil para cualquier usuario y que tenga un alto potencial de viralización, lo que a su vez generará riqueza tanto para el usuario como para el gestor del protocolo.
+    Tu respuesta debe ser un solo párrafo conciso, comenzando con "ESTRATEGIA ADI (UTILIDAD UNIVERSAL / GENERACIÓN DE RIQUEZA):", y debe conectar el capital blindado con la inversión en desarrollo de sistemas digitales escalables y de alta utilidad.
+    No uses markdown para negritas o títulos. Usa la herramienta de búsqueda para obtener contexto real si es necesario.`;
+    
+    // Consulta específica para la IA
+    const userQuery = `He completado el Protocolo 8D y mi capital está blindado en Stablecoins (Paso 5). Necesito usar este capital para crear una herramienta digital útil para cualquier usuario, con un alto potencial de viralización. ¿Cuál es mi siguiente movimiento estratégico para invertir este capital blindado en el desarrollo de este tipo de sistema digital? Dame el paso más audaz y efectivo para la utilidad universal y para la monetización mutua.`;
+
+    const getDigitalAdvice = useCallback(async () => {
+        if (advice) return; // Evitar llamadas duplicadas
+
+        setIsLoading(true);
+        setError(null);
+        
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            tools: [{ "google_search": {} }], // Usar Google Search para Grounding
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+        };
+
+        try {
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const candidate = result.candidates?.[0];
+
+            if (candidate && candidate.content?.parts?.[0]?.text) {
+                const text = candidate.content.parts[0].text;
+                
+                let sources = [];
+                const groundingMetadata = candidate.groundingMetadata;
+                if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                    sources = groundingMetadata.groundingAttributions
+                        .map(attribution => ({
+                            uri: attribution.web?.uri,
+                            title: attribution.web?.title,
+                        }))
+                        .filter(source => source.uri && source.title); 
+                }
+
+                setAdvice({ text, sources });
+
+            } else {
+                setError("La Asesoría Digital Inteligente no pudo generar una respuesta. (AI Error)");
+            }
+
+        } catch (err) {
+            console.error("Error fetching Gemini API:", err);
+            setError(`Fallo de conexión ADI: ${err.message}.`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [advice, userQuery, systemPrompt]);
+
+
+    useEffect(() => {
+        // Ejecutar la búsqueda solo si no hay asesoría y no está cargando
+        if (!advice && !isLoading) {
+            getDigitalAdvice();
+        }
+    }, [getDigitalAdvice, advice, isLoading]);
+
+
+    // --- RENDERIZADO DEL ADVISOR ---
+
+    return (
+        <div className="p-4 rounded-xl bg-gradient-to-br from-gray-900 to-gray-950 border-4 border-cyan-500 shadow-neon min-h-[250px] flex flex-col justify-center">
+            
+            <h4 className="text-xl font-extrabold text-cyan-300 flex items-center mb-4 border-b border-cyan-500/30 pb-2">
+                <BrainCircuit className="w-6 h-6 mr-2 text-cyan-400 animate-pulse"/> RESULTADO DE LA ASESORÍA (GENERADOR DE RIQUEZA) ✨
+            </h4>
+            
+            {isLoading && (
+                <div className="flex flex-col items-center justify-center p-6 text-cyan-400">
+                    <Terminal className="w-8 h-8 mb-3 animate-pulse"/>
+                    <p className="font-semibold text-lg">Analizando Capital Blindado... Calculando Ruta de Monetización 🚀</p>
+                </div>
+            )}
+
+            {error && (
+                <div className="p-4 bg-red-900/50 rounded-lg text-red-300 text-sm">
+                    {error}
+                </div>
+            )}
+
+            {advice && (
+                <>
+                    <div className="text-lg font-medium text-white p-3 bg-gray-800 rounded-lg border-l-4 border-emerald-400 shadow-md">
+                        {advice.text}
+                    </div>
+
+                    {advice.sources && advice.sources.length > 0 && (
+                        <div className="mt-3 text-xs text-gray-400">
+                            <p className="font-bold mb-1">Fuentes de Grounding (Fundamento Técnico):</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                                {advice.sources.slice(0, 3).map((source, index) => (
+                                    <li key={index} className="truncate">
+                                        <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:text-cyan-300">
+                                            {source.title || source.uri}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </>
+            )}
+
+            <p className='mt-5 text-sm font-bold text-yellow-400 text-center border-t border-gray-700 pt-3'>
+                <CloudLightning className='w-4 h-4 inline mr-1'/> ¡Su asesor humano validará y ejecutará este paso de monetización!
+            </p>
+        </div>
+    );
+}
+
+// --- CONTENIDO DEL PASO 3 QUE AHORA INCLUYE EL ASESOR DE SEGURIDAD
+const Step3WalletAdviser = ({ userId }) => (
+    <>
+        <DidacticConsole 
+            stepData={{
+                didactic: (
+                    <>
+                        <p className="mb-3">Acción: Regístrese en la **Casa de Cambio Digital** segura (ej. Binance). Esta plataforma le dará una **Billetera de Intercambio (Wallet)** para iniciar el cambio de VES a Dólares Digitales.</p>
+                        
+                        <div className='p-3 rounded-lg bg-gray-700/50 border border-cyan-500/50'>
+                            <Key className='w-5 h-5 inline mr-2 text-yellow-300'/> 
+                            <p className='inline font-bold text-white'>¿Qué es una Billetera (Wallet)?</p>
+                            <p className='text-sm mt-1 text-gray-200'>
+                                Es un software que le da **acceso** a su dinero digital, pero **no lo guarda**. Es como un **llavero** con las claves secretas para abrir una caja fuerte que está en la red de internet.
+                            </p>
+                        </div>
+                    </>
+                ),
+                example: (
+                    <>
+                        <p className='text-base font-bold text-white mb-2 mt-3'>Analogía (Casa de Cambio vs. Bóveda Personal):</p>
+                        <div className='p-3 bg-gray-700 rounded-lg'>
+                            <Repeat2 className='w-5 h-5 inline mr-2 text-emerald-300'/> La Casa de Cambio (Binance) es un **banco** (le da una Wallet, pero ellos guardan sus claves). Esto es bueno para **Liquidez**.
+                            <p className='mt-2 text-sm'>
+                                Para **Blindaje Total** (la mayor parte de su capital), usaremos una **Billetera de Autocustodia** (usted tiene las claves), que se detalla en el Paso 7.
+                            </p>
+                        </div>
+                        <p className='mt-3 text-sm text-gray-300'>Complete la verificación de identidad (KYC) en la Casa de Cambio. ¡Es obligatorio para su seguridad!</p>
+                    </>
+                ),
+                tip: "Herramienta 🔨: En esta fase, su 'Billetera' es la cuenta que crea en la Casa de Cambio Digital. Úsela solo como un puente, no como un lugar para guardar grandes sumas a largo plazo, ya que no tiene el control total de las claves."
+            }}
+        />
+        <SecurityAdvisorTool userId={userId} />
+    </>
+);
+
+
+// --- COMPONENTE INTERACTIVO DEL PASO 1 (CALCULADORA DE CAPITAL SEMILLA) ---
+const Step1Calculator = ({ initialSalary = 350, initialRate = 36.35, setCopyStatus, copyStatus }) => {
+    const [salary, setSalary] = useState(initialSalary.toString());
+    const [bcvRate, setBcvRate] = useState(initialRate.toString());
+
+    // Utilidad para copiar al portapapeles (compatible con iframe)
+    const copyToClipboard = (text, callback) => {
+        if (document.execCommand) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                callback(true);
+            } catch (err) {
+                callback(false);
+            }
+            document.body.removeChild(textarea);
+        } else {
+            navigator.clipboard.writeText(text).then(() => callback(true)).catch(() => callback(false));
+        }
+    };
+
+    const calculatedValues = useMemo(() => {
+        const sal = parseFloat(salary) || 0;
+        const rate = parseFloat(bcvRate) || 0;
+
+        const capitalSemillaUSD = sal * 0.10; 
+        const capitalSemillaVES = capitalSemillaUSD * rate;
+
+        return {
+            totalVES: (sal * rate).toFixed(2),
+            capitalSemillaVES: capitalSemillaVES.toFixed(2),
+            capitalSemillaUSD: capitalSemillaUSD.toFixed(2),
+            copyValue: capitalSemillaUSD.toFixed(2),
+        };
+    }, [salary, bcvRate]);
+
+    const handleCopy = () => {
+        const text = `Capital Semilla Mínimo a Blindar: $ ${calculatedValues.copyValue} USD (Bs. ${calculatedValues.capitalSemillaVES})`;
+        copyToClipboard(text, (success) => {
+            setCopyStatus(success ? 'copied_step1' : 'error');
+            setTimeout(() => setCopyStatus(null), 3000);
+        });
+    };
+
+    return (
+        <div className="p-4 sm:p-6 rounded-2xl bg-gray-900 border-2 border-purple-500 shadow-neon-purple shadow-purple-900/50">
+            <h4 className="text-xl font-extrabold text-purple-300 flex items-center mb-4">
+                <Calculator className="w-6 h-6 mr-2 text-purple-500"/> MÓDULO DE AHORRO DIGITAL
+            </h4>
+            
+            <p className="text-sm text-gray-400 mb-4">
+                Use esta herramienta para cuantificar el **10% de su ingreso**, que es el capital mínimo necesario para su **Blindaje Anti-Inflación**.
+            </p>
+
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-300 mb-1">1. Ingreso Mensual Estimado (USD)</label>
+                <input
+                    type="number"
+                    value={salary}
+                    onChange={(e) => setSalary(e.target.value)}
+                    placeholder="Ej: 350.00"
+                    className="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-700 focus:ring-cyan-500 focus:border-cyan-500 transition duration-200 shadow-inner"
+                />
+            </div>
+            
+            <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-300 mb-1">2. Tasa BCV Actual (VES/USD)</label>
+                <input
+                    type="number"
+                    value={bcvRate}
+                    onChange={(e) => setBcvRate(e.target.value)}
+                    placeholder="Ej: 36.35"
+                    className="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-700 focus:ring-cyan-500 focus:border-cyan-500 transition duration-200 shadow-inner"
+                />
+            </div>
+            
+            <div className="mt-5 p-4 bg-gray-950 rounded-lg border-2 border-emerald-500 shadow-neon-emerald">
+                <p className="text-md font-bold text-white mb-3 flex items-center">
+                    <Aperture className="w-5 h-5 mr-2 text-red-500 animate-pulse"/> RESULTADO DEFENSA ACTIVA
+                </p>
+                <div className="space-y-3">
+                    <div className="flex justify-between items-center text-sm border-b border-gray-700 pb-2">
+                        <span className="text-gray-400">10% de su Ingreso (VES):</span>
+                        <span className="text-xl font-extrabold text-white">Bs. {calculatedValues.capitalSemillaVES}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-emerald-300 font-bold">CAPITAL DE BLINDAJE ($ USD, 10%):</span>
+                        <span className="text-2xl font-extrabold text-emerald-400">$ {calculatedValues.capitalSemillaUSD}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <button 
+                onClick={handleCopy}
+                className={`mt-4 w-full py-3 flex items-center justify-center text-lg font-bold rounded-xl transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99]
+                    ${copyStatus === 'copied_step1' ? 'bg-green-600 text-white shadow-lg shadow-green-700/50' : 
+                    copyStatus === 'error' ? 'bg-red-600 text-white shadow-lg shadow-red-700/50' : 
+                    'bg-cyan-600 hover:bg-cyan-500 text-black shadow-lg shadow-cyan-600/50'}`}
+            >
+                {copyStatus === 'copied_step1' ? '¡Monto Copiado! ¡Listo para el Blindaje!' :
+                 copyStatus === 'error' ? 'Error al Copiar' :
+                 <>
+                    <Clipboard className="w-5 h-5 mr-2" />
+                    COPIAR CAPITAL ANTI-INFLACIÓN
+                </>}
+            </button>
+
+            <p className='mt-4 text-xs text-gray-400 text-center'>
+                <Banknote className="w-4 h-4 inline mr-1 text-red-500"/> Este es el monto mínimo que la inflación no podrá robarle.
+            </p>
+        </div>
+    );
+};
+
+
+// --- COMPONENTE DE LA CONSOLA DE ASESORÍA TRADICIONAL (para pasos 2, 4-7) ---
+const DidacticConsole = ({ stepData }) => {
+    if (!stepData) return null;
+    return (
+        <div className="mt-6 space-y-5">
+            <div className="p-4 rounded-xl bg-emerald-700/30 border border-emerald-600 shadow-md">
+                <p className="text-sm font-bold text-white flex items-center mb-1"><CheckCircle className="w-4 h-4 mr-2 text-yellow-300"/> [AC-I] ACCIÓN CONCRETA IMPLEMENTABLE</p>
+                <div className="text-base font-medium text-gray-100">{stepData.didactic}</div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-gray-950 border border-gray-700/50 shadow-inner">
+                <p className="text-sm font-bold text-white flex items-center mb-1"><Layers className="w-4 h-4 mr-2 text-cyan-400"/> [DATA] EJEMPLO PRÁCTICO & REAL</p>
+                <div className="text-base text-gray-300">{stepData.example}</div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-gray-900 border-l-4 border-cyan-500 shadow-neon-cyan">
+                <p className="text-sm font-bold text-cyan-400 flex items-center mb-1"><Cpu className="w-4 h-4 mr-2 text-cyan-400"/> [ADI] CONSEJO ESTRATÉGICO DEL EXPERTO</p>
+                <div className="text-base text-gray-300">{stepData.tip}</div>
+            </div>
+        </div>
+    );
+}
+
+const PROTOCOL_STEPS = [
+    { id: 1, title: "Diagnóstico: El Escudo Anti-Inflación", short: "Mida y Blindaje Mínimo", icon: TrendingDown },
+    { id: 2, title: "Activación: Llave Maestra (Generador de Riqueza)", short: "Inversión Operativa ($3 USD)", icon: Key,
+      content: {
+          didactic: `Acción: Realice una **Inversión Única** de **${ADVISOR_INFO.PAGO_MOVIL.AMOUNT_USD}** (en VES al cambio BCV) vía Pago Móvil. Esto le otorga la **Licencia de Riqueza Digital**, que activa el **Plan Maestro de Viralización (Generador de Riqueza)**, el cual se explica en detalle en el Paso 8.`,
+          example: (
+              <>
+                <p className='text-sm font-bold text-red-400 mb-1'>DATOS DE PAGO MÓVIL (Costo Fijo: {ADVISOR_INFO.PAGO_MOVIL.AMOUNT_USD})</p>
+                <ul className='list-none space-y-1 text-xs font-mono'>
+                    <li>**Banco BDV (0102):** {ADVISOR_INFO.PAGO_MOVIL.BANK_CODE}</li>
+                    <li>**Teléfono:** {ADVISOR_INFO.PAGO_MOVIL.PHONE}</li>
+                    <li>**Cédula/RIF:** {ADVISOR_INFO.PAGO_MOVIL.ID}</li>
+                </ul>
+                <p className='mt-3 text-cyan-300 font-semibold'>**Una vez pagado**, use el botón de WhatsApp abajo para enviar el comprobante y obtener acceso inmediato al Paso 3.</p>
+              </>
+          ),
+          tip: "Herramienta 🔨: Esta inversión es su cuota de acceso al sistema que le permite **convertir la herramienta en una fuente de ingresos** (Generador de Riqueza) a través de la viralización, además de proteger su capital."
+      }},
+    { id: 3, title: "El Puente Digital: La Billetera (Wallet)", short: "Entienda su Billetera Digital", icon: Wallet, content: { hasAiTool: true } }, // Content marker for custom component
+    { id: 4, title: "Estrategia de Compra Programada Inteligente", short: "Automatice el Cambio VES/USD", icon: DollarSign,
+      content: {
+          didactic: "Acción: Implemente una **Compra Programada** (antes conocida como DCA). NO cambie todo su dinero el mismo día. Divida el Capital Semilla en 4 o 5 partes y compre Dólares Digitales cada semana.",
+          example: (
+              <>
+                <p className='text-base font-bold text-white mb-2'>Analogía Didáctica (Anti-Inflación):</p>
+                <div className='p-3 bg-gray-700 rounded-lg'>
+                    <TrendingUp className='w-5 h-5 inline mr-2 text-emerald-300'/> Si compra cada semana, asegura un **precio promedio** y evita comprar cuando el Dólar está en un pico alto. Es como promediar los riesgos de la montaña rusa.
+                </div>
+                <p className='mt-3 text-sm text-gray-300'>Use la función de P2P (Persona a Persona) de la Casa de Cambio. Siempre elija vendedores con alta reputación (+98% de éxito).</p>
+              </>
+          ),
+          tip: "Herramienta 🔨: El mayor riesgo al cambiar Bolívares es el momento de la compra. La **Compra Programada** es la única herramienta que **anula** el riesgo de la variación del tipo de cambio."
+      }},
+    { id: 5, title: "Resguardo Anti-Bala: Dólares Digitales (Stablecoins)", short: "Blindaje Total con Stablecoins", icon: ShieldCheck,
+      content: {
+          didactic: "Acción: Su capital debe estar en **Dólares Digitales (USDT, USDC)**. Son el único activo que mantiene el valor **1:1 con el dólar físico** y son su **Herramienta Anti-Inflación** primaria, ya que eliminan la volatilidad.",
+          example: "Ejemplo Práctico: NO los mantenga en Bitcoin o Ethereum. Esos activos son para invertir (Paso 6) y tienen mucha variación de precio. Su objetivo aquí es PRESERVAR el valor. Sus Dólares Digitales son su Refugio de Valor.",
+          tip: "Herramienta 🔨: Las Stablecoins le permiten tener su dinero en el extranjero de forma digital, 24/7 y con acceso inmediato, blindando instantáneamente su poder adquisitivo contra la inflación local."
+      }},
+    { id: 6, title: "Generación de Rendimiento Inteligente", short: "Ponga su USD Digital a Multiplicarse", icon: TrendingUp,
+      content: {
+          didactic: "Acción: Active el Módulo de Rendimiento prestando sus Dólares Digitales en programas de Ahorro Flexible o Staking en plataformas seguras. Esto le da un **interés anual** por tener su dinero allí.",
+          example: "Ejemplo Práctico: Invierta un 80% del capital blindado en una cuenta que le pague un 4-8% anual. Es dinero pasivo que se genera solo. $1,000 USD pueden generarle $40 - $80 USD al año sin hacer nada.",
+          tip: "Herramienta 🔨: **¡Advertencia!** NUNCA invierta en plataformas que prometan más del 12% anual. Esas son trampas de alto riesgo. La riqueza duradera viene de retornos sostenibles y transparentes."
+      }},
+    { id: 7, title: "Estrategia de Liquidez (80/20)", short: "Equilibrio entre Gasto y Crecimiento", icon: Layers,
+      content: {
+          didactic: "Acción: Defina el **80/20**. 20% de su capital para 'Liquidez Móvil' (gasto/emergencias) dentro de la Casa de Cambio. 80% para 'Crecimiento' (rendimiento a largo plazo) en una **Billetera de Autocustodia**.", // Referencia a Autocustodia más clara
+          example: "Ejemplo Práctico: El 20% debe ser fácil de convertir de nuevo a Bolívares si necesita. El 80% es el que trabaja para usted a largo plazo. Separe el dinero de las emergencias del dinero de la inversión.",
+          tip: "Herramienta 🔨: La **Autocustodia** (billetera privada) es su bóveda. Si tiene grandes sumas, retire el 80% del Exchange a una billetera donde SÓLO usted tenga las 12 palabras clave. ¡Usted es su propio banco!"
+      }},
+    { id: 8, title: "Asesoría Digital Inteligente (ADI) 24/7", short: "Generador de Riqueza y Viralización", icon: BrainCircuit, content: { hasAiTool: true } }, // Content marker for custom component
+];
+
+
+// --- COMPONENTE PRINCIPAL DE LA APLICACIÓN ---
+const App = () => {
+    // 1. Estados iniciales de la App
+    const [currentStep, setCurrentStep] = useState(0); 
+    const [copyStatus, setCopyStatus] = useState(null); 
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false); 
+    const [firebaseError, setFirebaseError] = useState(null); 
+
+    // 2b. Estados de Firebase/Auth
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+    
+    // Almacena la referencia del paso actual para onSnapshot
+    const currentStepRef = useRef(currentStep);
+    
+    // --- EFECTO A: MANTENER LA REFERENCIA SINCRONIZADA ---
+    useEffect(() => {
+        currentStepRef.current = currentStep;
+    }, [currentStep]);
+
+    // --- FUNCIÓN PARA GUARDAR EL PROGRESO EN FIRESTORE ---
+    const saveProgress = useCallback(async (step) => {
+        if (!db || !userId) return;
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // Private Data Path: /artifacts/{appId}/users/{userId}/{your_collection_name}/{documentId}
+        const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'protocolo_8d_progress', 'data');
+        
+        try {
+            await setDoc(userDocRef, {
+                currentStep: step,
+                timestamp: new Date().toISOString(),
+            }, { merge: true });
+            console.log(`[ACTION] Progreso guardado en DB: Paso ${step}`);
+        } catch (error) {
+            console.error("Error guardando progreso en Firestore:", error);
+        }
+    }, [db, userId]);
+
+    // --- EFECTO 1: Inicialización de Firebase y Autenticación (El Bloque Crítico) ---
+    useEffect(() => {
+        let app, firestore, authentication;
+        let unsubscribeAuth = () => {};
+
+        const initializeFirebase = async () => {
+            try {
+                // 1. Cargar dependencias de Firebase de forma dinámica y segura
+                const firebaseApp = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
+                const firebaseAuth = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
+                const firebaseFirestore = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+
+                initializeApp = firebaseApp.initializeApp;
+                getAuth = firebaseAuth.getAuth;
+                signInAnonymously = firebaseAuth.signInAnonymously;
+                signInWithCustomToken = firebaseAuth.signInWithCustomToken;
+                onAuthStateChanged = firebaseAuth.onAuthStateChanged;
+                
+                getFirestore = firebaseFirestore.getFirestore;
+                doc = firebaseFirestore.doc;
+                setDoc = firebaseFirestore.setDoc;
+                onSnapshot = firebaseFirestore.onSnapshot;
+
+                // 2. Verificar Configuración
+                const firebaseConfig = (() => {
+                    try {
+                        return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+                    } catch (e) {
+                        throw new Error("Configuración de Firebase no válida o faltante.");
+                    }
+                })();
+
+                if (!firebaseConfig) throw new Error("Configuración de Firebase no disponible.");
+
+                // 3. Inicializar Servicios
+                app = initializeApp(firebaseConfig);
+                firestore = getFirestore(app);
+                authentication = getAuth(app);
+                
+                setDb(firestore);
+                setAuth(authentication);
+
+                // 4. Autenticar
+                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (token) {
+                    await signInWithCustomToken(authentication, token);
+                } else {
+                    await signInAnonymously(authentication);
+                }
+
+                // 5. Configurar Listener de Auth
+                unsubscribeAuth = onAuthStateChanged(authentication, (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                    } else {
+                        setUserId(null);
+                    }
+                    setIsAuthReady(true);
+                });
+
+                setFirebaseError(null); // Borrar cualquier error si la inicialización es exitosa
+
+            } catch (error) {
+                console.error("Error Crítico al inicializar la plataforma:", error);
+                setFirebaseError(`FALLO CRÍTICO DE CONEXIÓN: ${error.message}.`);
+                setIsLoading(false);
+            }
+        };
+
+        initializeFirebase();
+
+        // Cleanup function
+        return () => {
+            unsubscribeAuth();
+        };
+
+    }, []); 
+
+    // --- EFECTO 2: Leer y Sincronizar el progreso del usuario de Firestore (REQUIERE AUTH) ---
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady || !onSnapshot || !doc) return; 
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'protocolo_8d_progress', 'data');
+
+        // Suscripción en tiempo real (onSnapshot)
+        const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const dbStep = data.currentStep || 0;
+                
+                if (dbStep !== currentStepRef.current) {
+                    console.log(`[FIREBASE] Sincronización DB: Paso ${dbStep}.`);
+                    setCurrentStep(dbStep);
+                }
+            } else {
+                // If document doesn't exist, ensure we are on the welcome screen if the current state isn't 0
+                if (currentStepRef.current !== 0) {
+                     setCurrentStep(0);
+                }
+            }
+            setIsLoading(false);
+            setIsSaving(false); 
+        }, (error) => {
+            console.error("Error leyendo progreso en tiempo real:", error);
+            setFirebaseError(`Error de sincronización de DB: ${error.message}`);
+            setIsLoading(false);
+            setIsSaving(false);
+        });
+
+        return () => unsubscribe(); 
+    }, [db, userId, isAuthReady]);
+
+
+    // --- LÓGICA DE NAVEGACIÓN (AVANZAR/RETROCEDER) ---
+    const handleNextStep = useCallback(() => {
+        if (currentStep === PROTOCOL_STEPS.length) {
+            return; 
+        }
+
+        if (isSaving || currentStep >= PROTOCOL_STEPS.length) return;
+
+        const nextStep = currentStep + 1;
+        setIsSaving(true); 
+        setCurrentStep(nextStep);
+        saveProgress(nextStep);
+        
+        // Note: The saving state will be reset by the onSnapshot listener, which is better
+        // setTimeout(() => setIsSaving(false), 300); 
+        setCopyStatus(null);
+    }, [currentStep, saveProgress, isSaving]);
+
+    const handlePrevStep = useCallback(() => {
+        if (isSaving || currentStep <= 1) return; 
+
+        const prevStep = currentStep - 1;
+        
+        setIsSaving(true);
+        setCurrentStep(prevStep);
+        saveProgress(prevStep);
+
+        // Note: The saving state will be reset by the onSnapshot listener
+        // setTimeout(() => setIsSaving(false), 300); 
+        setCopyStatus(null);
+    }, [currentStep, saveProgress, isSaving]);
+
+    const handleGoToStart = useCallback(() => {
+        if (isSaving) return; 
+
+        const startStep = 1;
+
+        setIsSaving(true);
+        setCurrentStep(startStep);
+        saveProgress(startStep);
+
+        // Note: The saving state will be reset by the onSnapshot listener
+        // setTimeout(() => setIsSaving(false), 300); 
+        setCopyStatus(null);
+    }, [saveProgress, isSaving]);
+
+    // --- UTILIDADES DE RENDERIZADO Y WHATSAPP ---
+    // Clases CSS modernizadas y futuristas
+    const styles = {
+        bgClass: "bg-gray-950 min-h-screen flex items-start sm:items-center justify-center p-4 font-sans text-white",
+        cardClass: "w-full max-w-lg bg-gray-900 p-6 sm:p-8 rounded-3xl shadow-3xl shadow-purple-900/50 border-t-8 border-cyan-400/80 transition-all duration-500",
+        disabledBtnClass: "bg-gray-700 text-gray-400 cursor-not-allowed",
+        enabledBtnClass: "bg-cyan-500 hover:bg-cyan-400 shadow-xl shadow-cyan-500/80",
+        whatsappBtnClass: "bg-emerald-500 hover:bg-emerald-400 shadow-xl shadow-emerald-600/80 text-black", 
+    };
+
+    const generateWhatsAppLink = (message) => {
+        const encodedMessage = encodeURIComponent(message);
+        const cleanNumber = ADVISOR_INFO.WHATSAPP_NUMBER_ONLY.replace(/[^0-9]/g, ''); 
+        return `https://wa.me/${cleanNumber}?text=${encodedMessage}`;
+    };
+    
+    // --- HANDLER PARA EL BOTÓN DE WHATSAPP ---
+    const handleWhatsAppClick = (message) => {
+        const url = generateWhatsAppLink(message);
+        // Intentar abrir la ventana
+        const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+        
+        // Comprobar si la apertura fue bloqueada
+        if (newWindow === null || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            setCopyStatus('open_blocked'); // Establecer el estado de bloqueo
+            // El mensaje de advertencia se mostrará en el renderizado
+        } else {
+            newWindow.focus();
+            setCopyStatus(null);
+        }
+    };
+
+
+    const getButtonText = () => {
+        if (isSaving) return "SINCRONIZANDO...";
+        if (currentStep === 0) return "INICIAR MI LICENCIA ANTI-INFLACIÓN";
+        if (currentStep < PROTOCOL_STEPS.length) return `SIGUIENTE: ${PROTOCOL_STEPS[currentStep].short}`; 
+        return "CONTACTAR ASESOR HUMANO (VALIDAR GENERADOR DE RIQUEZA)";
+    };
+    
+    const getButtonIcon = () => {
+        if (isSaving) return <Loader className="w-5 h-5 ml-2 animate-spin" />;
+        if (currentStep < PROTOCOL_STEPS.length) return <ArrowRight className="w-5 h-5 ml-2" />;
+        return <MessageSquare className="w-5 h-5 ml-2" />;
+    };
+
+    const currentStepData = currentStep > 0 && currentStep <= PROTOCOL_STEPS.length ? PROTOCOL_STEPS[currentStep - 1] : null;
+
+    const isPaymentStep = currentStep === 2;
+    const isWalletStep = currentStep === 3;
+    const isLastStep = currentStep === PROTOCOL_STEPS.length; 
+    const isWelcomeScreen = currentStep === 0;
+    const canGoBack = currentStep > 1;
+
+    // Determina el enlace y el mensaje de WhatsApp según el paso
+    const whatsappMessage = isPaymentStep ? WHATSAPP_MESSAGES.COMPROBANTE : 
+                            isLastStep ? WHATSAPP_MESSAGES.ASESORIA : 
+                            null;
+    const currentLinkToCopy = whatsappMessage ? generateWhatsAppLink(whatsappMessage) : null;
+
+    // Función de copia al portapapeles para el enlace directo
+    const handleCopyLink = () => {
+        if (currentLinkToCopy) {
+            const copyToClipboardFunc = (text, callback) => {
+                if (document.execCommand) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    try {
+                        document.execCommand('copy');
+                        callback(true);
+                    } catch (err) {
+                        callback(false);
+                    }
+                    document.body.removeChild(textarea);
+                } else {
+                    navigator.clipboard.writeText(text).then(() => callback(true)).catch(() => callback(false));
+                }
+            };
+            
+            copyToClipboardFunc(currentLinkToCopy, (success) => {
+                setCopyStatus(success ? 'copied_link' : 'error');
+                setTimeout(() => setCopyStatus(null), 3000);
+            });
+        }
+    };
+
+
+    // --- MANEJO DE VISTAS (CARGA Y ERROR) ---
+
+    if (firebaseError) {
+        return (
+             <div className="flex items-center justify-center min-h-screen bg-gray-950 text-red-400 p-8">
+                <div className="bg-gray-900 p-6 rounded-xl border-t-8 border-red-500 shadow-lg shadow-red-900/50 w-full max-w-lg">
+                    <h2 className="text-3xl font-extrabold mb-4 flex items-center text-yellow-500">
+                        <Zap className="w-8 h-8 mr-3 text-red-500"/> FALLA DE CONEXIÓN CRÍTICA
+                    </h2>
+                    <p className="text-lg mb-4 text-gray-300">
+                        La herramienta digital no pudo iniciar el protocolo seguro.
+                    </p>
+                    <p className="text-sm font-mono bg-gray-800 p-3 rounded-lg overflow-x-auto break-words">
+                        {firebaseError}
+                    </p>
+                    <p className="mt-4 text-sm text-gray-300">
+                        Intente recargar el módulo.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+    
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gray-950 text-cyan-400">
+                <p className="text-xl font-bold animate-pulse flex items-center">
+                    <Rocket className="w-6 h-6 mr-3 animate-bounce"/>
+                    Activando Protocolo 8D: Carga Segura...
+                </p>
+            </div>
+        );
+    }
+    
+    // --- RENDERIZADO DEL PROTOCOLO (Si la carga fue exitosa) ---
+    return (
+        <div className={styles.bgClass}>
+            
+            <div className={styles.cardClass}>
+                
+                {/* CABECERA Y TÍTULO (Estilo Consola) */}
+                <div className="flex justify-center items-center mb-6">
+                    <div className="text-center flex-grow">
+                        <Cpu className="w-12 h-12 mx-auto text-cyan-400 mb-2 animate-pulse" />
+                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white uppercase leading-tight">
+                            Protocolo <span className='text-cyan-400'>8D</span>
+                        </h1>
+                        <p className="text-lg font-semibold text-emerald-500 mt-1">SISTEMA DE RIQUEZA DIGITAL (FINTECH)</p>
+                    </div>
+                </div>
+
+                {/* INFO DEL ASESOR */}
+                <div className="mt-4 p-3 bg-gray-800 rounded-xl border-l-4 border-cyan-500 text-center mb-8 shadow-inner shadow-cyan-900/30">
+                    <p className="text-xs text-gray-400">Asesoría 24/7 con **{ADVISOR_INFO.NAME}**</p>
+                    <p className="text-sm font-bold text-cyan-400 flex items-center justify-center">
+                        <MessageSquare className="w-4 h-4 mr-2"/> WhatsApp: {ADVISOR_INFO.WHATSAPP_NUMBER_ONLY}
+                    </p>
+                </div>
+                
+                {/* INDICADOR DE PROGRESO */}
+                <div className="mb-8 p-3 bg-gray-800 rounded-xl border border-gray-700 shadow-md">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-2">
+                        SECUENCIA DE ACTIVACIÓN Y BLINDAJE
+                    </h2>
+                    <div className="flex items-center justify-between space-x-1">
+                        {PROTOCOL_STEPS.map((step, index) => (
+                            <div key={step.id} 
+                                 className={`w-1/8 h-3 rounded-full transition-all duration-500 relative
+                                            ${currentStep > index ? 'bg-emerald-500 shadow-lg shadow-emerald-700/50' : 
+                                              currentStep === index + 1 ? 'bg-cyan-500 shadow-xl shadow-cyan-500/50 animate-pulse' : 
+                                              'bg-gray-700'}`}>
+                                <span className={`absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-xs font-bold transition-opacity duration-300
+                                                 ${currentStep === index + 1 ? 'text-cyan-400 opacity-100' : 'text-gray-500 opacity-0 sm:opacity-100'}`}>
+                                    {step.id}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-sm text-gray-400 mt-5 text-center">
+                        PASO DE ENFOQUE: {currentStep} de {PROTOCOL_STEPS.length}
+                    </p>
+                </div>
+
+                {/* CONTENIDO DIDÁCTICO */}
+                <div className="min-h-[350px] mb-8">
+                    {isWelcomeScreen ? (
+                         <div className="text-center p-6 border-2 border-dashed border-emerald-600 rounded-xl bg-gray-900/50 shadow-lg shadow-emerald-900/40">
+                            <h2 className="text-3xl font-bold text-white mb-3">
+                                ¡CONSOLA ADI INICIADA!
+                            </h2>
+                            <p className="text-lg text-gray-300 mb-4 font-semibold">
+                                Su **Herramienta Anti-Inflación** personal está lista. Acceda a la **Generación de Riqueza** con los 8 Pasos.
+                            </p>
+                            <div className="flex flex-col space-y-2 items-center text-sm font-mono text-cyan-400 font-extrabold p-3 bg-gray-800 rounded-lg">
+                                <span className='flex items-center'><ShieldCheck className="w-4 h-4 mr-2 text-emerald-400" /> HERRAMIENTA ANTI-INFLACIÓN (BLINDAJE)</span>
+                                <span className='flex items-center'><TrendingUp className="w-4 h-4 mr-2 text-purple-400" /> GENERADOR DE RIQUEZA (MONETIZACIÓN)</span>
+                                <span className='flex items-center'><Cpu className="w-4 h-4 mr-2 text-yellow-400" /> ASESOR DIGITAL INTELIGENTE (ADI)</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="p-4 bg-gray-800 rounded-xl shadow-inner border-l-4 border-emerald-500 mb-6">
+                                <p className="text-sm uppercase text-gray-400 font-bold">MÓDULO {currentStep}</p>
+                                <div className="flex items-center mt-1">
+                                    <span className="text-2xl font-extrabold mr-3 text-cyan-400 leading-tight">{currentStepData.title}</span>
+                                </div>
+                            </div>
+                            
+                            {currentStep === 1 ? (
+                                <Step1Calculator setCopyStatus={setCopyStatus} copyStatus={copyStatus} />
+                            ) : isWalletStep ? (
+                                <Step3WalletAdviser userId={userId} />
+                            ) : isLastStep ? (
+                                <DigitalAdvisor userId={userId} />
+                            ) : (
+                                <DidacticConsole stepData={currentStepData.content} />
+                            )}
+                        </>
+                    )}
+                </div>
+                
+                {/* BOTONES DE WHATSAPP (PAGO Y ASESORÍA) */}
+                {(isPaymentStep || isLastStep) && (
+                    <>
+                        {isLastStep && (
+                             <div className="mt-4 text-center p-4 bg-gray-800 rounded-xl border-l-4 border-emerald-500 mb-4 shadow-neon-emerald">
+                                <p className="text-xl text-white font-extrabold mb-2 flex items-center justify-center">
+                                    <CheckCircle className='w-6 h-6 mr-2 text-emerald-400'/> ¡PROTOCOLO 8D IMPLEMENTADO!
+                                </p>
+                                <p className="text-sm text-gray-400">
+                                    **PASO FINAL:** Valide su estrategia de Monetización con el experto humano.
+                                </p>
+                            </div>
+                        )}
+                        
+                        {/* MENSAJE DE ADVERTENCIA SI LA APERTURA FUE BLOQUEADA */}
+                        {copyStatus === 'open_blocked' && (
+                             <p className='text-center text-sm font-bold text-yellow-400 bg-red-900/50 p-2 rounded-lg mb-2 animate-pulse'>
+                                ¡ADVERTENCIA! El navegador bloqueó la apertura. Usa el botón de abajo para COPIAR el enlace.
+                             </p>
+                        )}
+
+                        <button 
+                            onClick={() => handleWhatsAppClick(whatsappMessage)}
+                            className={`w-full py-4 mb-3 flex flex-col items-center justify-center font-extrabold text-xl text-black rounded-xl shadow-lg transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99]
+                                        ${isPaymentStep ? 'bg-yellow-400 hover:bg-yellow-300 shadow-yellow-700/80' : styles.whatsappBtnClass}`}
+                        >
+                            <div className='flex items-center'>
+                                <CreditCard className="w-6 h-6 mr-3" />
+                                {isPaymentStep ? `ACTIVAR LICENCIA DE RIQUEZA DIGITAL (${ADVISOR_INFO.PAGO_MOVIL.AMOUNT_USD})` : 'VALIDAR ESTRATEGIA DE RIQUEZA (WhatsApp)'}
+                            </div>
+                            <span className='text-xs font-semibold mt-1 text-red-700'>
+                                (CLICK AQUÍ PARA CONTACTAR AL ASESOR HUMANO)
+                            </span>
+                        </button>
+                        
+                        
+                        {/* BOTÓN DE COPIAR ENLACE DIRECTO (FALLBACK) */}
+                        <div className="text-center mb-4 p-4 bg-gray-800 rounded-xl border-2 border-red-500/50">
+                            <p className="text-sm font-bold text-red-400 mb-2 uppercase tracking-wider">
+                                **SOLUCIÓN SI EL CHAT NO ABRE**
+                            </p>
+                            <button 
+                                onClick={handleCopyLink}
+                                disabled={isSaving}
+                                className={`w-full py-3 flex items-center justify-center text-lg font-extrabold rounded-xl transition-colors duration-300 transform hover:scale-[1.01]
+                                    ${isSaving ? styles.disabledBtnClass : 
+                                    copyStatus === 'copied_link' ? 'bg-green-600 text-white shadow-green-700/80' : 
+                                    copyStatus === 'error' ? 'bg-red-600 text-white shadow-red-700/80' : 
+                                    'bg-gray-700 hover:bg-gray-600 text-white shadow-gray-700/80'}`}
+                            >
+                                {copyStatus === 'copied_link' ? 
+                                 <>
+                                    <CheckCircle className="w-5 h-5 mr-2" />
+                                    ¡ENLACE COPIADO! ¡PÉGALO EN TU CHAT DE WHATSAPP!
+                                 </> :
+                                 copyStatus === 'error' ? 'Error al Copiar' :
+                                 <>
+                                    <Link className="w-5 h-5 mr-2" />
+                                    COPIAR ENLACE DIRECTO ({isLastStep ? 'ASESORÍA' : 'PAGO'})
+                                </>}
+                            </button>
+                        </div>
+                    </>
+                )}
+
+
+                {/* BOTÓN PRINCIPAL: Siguiente / Iniciar */}
+                {!isLastStep ? (
+                    <button 
+                        onClick={handleNextStep} 
+                        disabled={isSaving}
+                        className={`w-full py-4 flex items-center justify-center font-extrabold text-xl text-black rounded-xl transition-all duration-300 transform active:scale-[0.98]
+                                    ${isSaving ? styles.disabledBtnClass : 'bg-gradient-to-r from-cyan-400 to-purple-400 hover:from-cyan-300 hover:to-purple-300 shadow-xl shadow-cyan-500/80'}`}
+                    >
+                        {getButtonText()}
+                        {getButtonIcon()}
+                    </button>
+                ) : (
+                    <p className="text-center text-gray-500 text-sm italic mt-4">
+                        *El Generador de Riqueza ADI ha trazado el plan. Siga el paso superior.
+                    </p>
+                )}
+
+                {/* BARRA DE NAVEGACIÓN INFERIOR (Retroceso y Home) */}
+                {!isWelcomeScreen && (
+                    <div className="flex justify-center space-x-4 mt-6 border-t border-gray-800 pt-4">
+                        <button 
+                            onClick={handlePrevStep}
+                            disabled={!canGoBack || isSaving}
+                            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-300 
+                                ${!canGoBack || isSaving ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                        >
+                            <ArrowLeft className="w-5 h-5 inline mr-1" />
+                            Paso Anterior
+                        </button>
+                        
+                        <button 
+                            onClick={handleGoToStart}
+                            disabled={isSaving}
+                            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors duration-300
+                                ${isSaving ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-cyan-400'}`}
+                        >
+                            <Home className="w-5 h-5 inline mr-1" />
+                            Paso 1: Diagnóstico
+                        </button>
+                    </div>
+                )}
+                
+                {/* FOOTER Y USER ID */}
+                <div className="mt-6 text-center text-xs text-gray-600 border-t border-gray-800 pt-3">
+                    {ADVISOR_INFO.SLOGAN}
+                </div>
+                <p className="text-xs text-center text-gray-700 mt-2">
+                    ID de Sesión: {userId || 'Cargando...'}
+                </p>
+            </div>
+        </div>
+    );
+};
+
+export default App;
